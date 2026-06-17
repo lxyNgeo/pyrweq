@@ -1,0 +1,45 @@
+"""Helper functions for RWEQ factor calculations."""
+
+import numpy as np
+
+
+def wind_speed_2m(wind_speed_10m: np.ndarray) -> np.ndarray:
+    """Convert 10m wind speed to 2m height using power law.
+
+    U2 = U10 * (z2 / z10)^(1/7)
+    """
+    return wind_speed_10m * (2.0 / 10.0) ** (1.0 / 7.0)
+
+
+def air_density(elevation_km: np.ndarray, temp_kelvin: np.ndarray) -> np.ndarray:
+    """Calculate air density from elevation and temperature.
+
+    rho = 348 * (1.013 - 0.1183*EL + 0.0048*EL^2) / T
+    """
+    return 348.0 * (1.013 - 0.1183 * elevation_km + 0.0048 * elevation_km ** 2) / temp_kelvin
+
+
+def soil_moisture_factor(
+    pet: np.ndarray,
+    precip: np.ndarray,
+    irrigation: float = 0.0,
+    rain_days: float = 1.0,
+    nd: float = 15.0,
+) -> np.ndarray:
+    """Calculate soil moisture factor SW.
+
+    SW = [ETp - (R + I)] / Rd * Nd / ETp
+    """
+    sw = (pet - (precip + irrigation)) / rain_days * nd / pet
+    return np.clip(sw, 0.0, 1.0)
+
+
+def snow_cover_factor(snow_depth: np.ndarray, threshold_mm: float = 25.4) -> np.ndarray:
+    """Calculate snow cover factor SD.
+
+    SD = 1 - P, where P is probability of snow depth > threshold.
+    Input is snow depth array; P is computed as fraction of cells exceeding threshold.
+    For per-pixel computation with time series, pass the probability directly.
+    """
+    p = np.where(snow_depth > threshold_mm, 1.0, 0.0)
+    return 1.0 - p
