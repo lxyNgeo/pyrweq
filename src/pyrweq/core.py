@@ -58,6 +58,7 @@ def compute_rweq(
     n_workers: int | None = None,
     backend: str = "numpy",
     chunks: tuple[int, int] | str = "auto",
+    masked: bool = True,
 ) -> RWEQResult:
     """Compute RWEQ wind erosion量.
 
@@ -95,6 +96,11 @@ def compute_rweq(
         Only used with backend="dask" and GeoTIFF path inputs: chunk size for
         lazy reading (pixels). "auto" uses each file's native block size.
         Array inputs are never rechunked.
+    masked : bool
+        If True (default), nodata values in input rasters are converted to
+        NaN so invalid cells are excluded from results instead of treated as
+        real data. NaN cells propagate through all factors and are written
+        back as nodata in output rasters.
 
     Returns
     -------
@@ -107,9 +113,9 @@ def compute_rweq(
         nonlocal base_profile
         if isinstance(v, str):
             if lazy:
-                arr, prof = read_raster_lazy(v, chunks=chunks)
+                arr, prof = read_raster_lazy(v, chunks=chunks, masked=masked)
             else:
-                arr, prof = read_raster(v)
+                arr, prof = read_raster(v, masked=masked)
             if base_profile is None:
                 base_profile = prof
             return arr

@@ -12,25 +12,37 @@ from pyrweq._types import RasterioProfile
 logger = logging.getLogger(__name__)
 
 
-def read_raster(path: str) -> tuple[np.ndarray, RasterioProfile]:
+def read_raster(path: str, masked: bool = True) -> tuple[np.ndarray, RasterioProfile]:
     """Read a GeoTIFF and return (data, profile).
+
+    Parameters
+    ----------
+    path : str
+        GeoTIFF path.
+    masked : bool
+        If True (default), convert the file's nodata values to NaN so they
+        propagate through factor math instead of being treated as real data.
+        Integer rasters are promoted to float when masked.
 
     Returns
     -------
     data : np.ndarray
-        2D array of raster values.
+        2D array of raster values (NaN where nodata if masked).
     profile : dict
         Rasterio profile dict (for writing output with same georeference).
     """
     with rasterio.open(path) as src:
         data = src.read(1)
         profile = src.profile.copy()
+    if masked and profile.get("nodata") is not None:
+        data = np.where(data == profile["nodata"], np.nan, data)
     return data, profile
 
 
 def read_raster_lazy(
     path: str,
     chunks: tuple[int, int] | str = "auto",
+    masked: bool = True,
 ) -> tuple["da.Array", RasterioProfile]:
     """Read a GeoTIFF lazily as a dask array without loading it into RAM.
 
@@ -44,6 +56,8 @@ def read_raster_lazy(
         GeoTIFF path.
     chunks : (rows, cols) or "auto"
         Chunk size in pixels. "auto" uses the file's native block size.
+    masked : bool
+        If True (default), convert nodata values to NaN (lazy, per chunk).
 
     Returns
     -------
@@ -54,8 +68,7 @@ def read_raster_lazy(
 
     Notes
     -----
-    Requires ``dask[array]``. The returned array preserves nodata values
-    (no masking), matching :func:`read_raster` semantics.
+    Requires ``dask[array]``.
     """
     try:
         import dask.array as da
@@ -69,7 +82,12 @@ def read_raster_lazy(
         profile = src.profile.copy()
         height, width = src.height, src.width
         dtype = profile["dtype"]
+        nodata = profile.get("nodata")
         native = src.block_shapes[0]  # (rows, cols) per block
+
+    if masked and nodata is not None and np.dtype(dtype).kind in "iu":
+        # NaN masking promotes integer arrays to float
+        dtype = "float64"
 
     if chunks == "auto":
         block_rows, block_cols = native
@@ -83,7 +101,10 @@ def read_raster_lazy(
         from rasterio.windows import Window
 
         with rasterio.open(path) as src:
-            return src.read(1, window=Window(col0, row0, cols, rows))
+            data = src.read(1, window=Window(col0, row0, cols, rows))
+        if masked and nodata is not None:
+            data = np.where(data == nodata, np.nan, data)
+        return data
 
     grid = []
     for row0 in range(0, height, block_rows):
@@ -106,6 +127,7 @@ def write_raster(
     path: str,
     dtype: str | None = None,
     nodata: float | None = None,
+    nan_to_nodata: bool = True,
 ) -> None:
     """Write a 2D array as GeoTIFF.
 
@@ -121,6 +143,10 @@ def write_raster(
         Override data type. If None, uses float32.
     nodata : float or None
         NoData value. If None, uses -9999.
+    nan_to_nodata : bool
+        If True (default), replace NaN cells with the nodata value so invalid
+        cells are marked properly in the output (NaN cannot round-trip
+        through all GDAL formats).
     """
     if dtype is None:
         dtype = "float32"
@@ -137,6 +163,8 @@ def write_raster(
         nodata=nodata,
         compress="lzw",
     )
+    if nan_to_nodata:
+        data = np.where(np.isnan(data), nodata, data)
     with rasterio.open(path, "w", **out_profile) as dst:
         dst.write(data.astype(dtype), 1)
 
