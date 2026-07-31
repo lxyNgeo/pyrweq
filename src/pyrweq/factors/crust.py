@@ -1,9 +1,16 @@
 """Soil crust factor (SCF) calculation for RWEQ."""
 
+from __future__ import annotations
+
+import logging
+
 import numpy as np
 
+from pyrweq._types import FactorArray
 
-def calc_crust_factor(clay: np.ndarray, organic_matter: np.ndarray) -> np.ndarray:
+logger = logging.getLogger(__name__)
+
+def calc_crust_factor(clay: FactorArray, organic_matter: FactorArray) -> FactorArray:
     """Calculate soil crust factor SCF.
 
     SCF = 1 / (1 + 0.0066 * Cl^2 + 0.021 * OM^2)

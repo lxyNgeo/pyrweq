@@ -1,6 +1,14 @@
 """Vegetation factor (C / COG) calculation for RWEQ."""
 
+from __future__ import annotations
+
+import logging
+
 import numpy as np
+
+from pyrweq._types import FactorArray, is_dask_array
+
+logger = logging.getLogger(__name__)
 
 
 ALPHA_COEFFICIENTS = {
@@ -14,10 +22,10 @@ ALPHA_COEFFICIENTS = {
 
 
 def vegetation_cover(
-    ndvi: np.ndarray,
+    ndvi: FactorArray,
     ndvi_soil: float | None = None,
     ndvi_veg: float | None = None,
-) -> np.ndarray:
+) -> FactorArray:
     """Calculate vegetation cover fraction using pixel dimidiate model.
 
     SC = (NDVI - NDVIsoil) / (NDVIveg - NDVIsoil)
@@ -36,12 +44,23 @@ def vegetation_cover(
     np.ndarray
         Vegetation cover fraction [0, 1].
     """
-    if ndvi_soil is None:
-        ndvi_soil = float(np.nanpercentile(ndvi, 5))
-    if ndvi_veg is None:
-        ndvi_veg = float(np.nanpercentile(ndvi, 95))
+    if ndvi_soil is None or ndvi_veg is None:
+        # Percentiles are global reductions; dask cannot do full-array
+        # nanquantile lazily, so fall back to eager compute for the scalar
+        # thresholds. This triggers the graph once, but the returned factor
+        # arrays stay lazy.
+        ndvi_np = ndvi.compute() if is_dask_array(ndvi) else ndvi
+        if ndvi_soil is None:
+            ndvi_soil = float(np.nanpercentile(ndvi_np, 5))
+        if ndvi_veg is None:
+            ndvi_veg = float(np.nanpercentile(ndvi_np, 95))
 
     if ndvi_veg == ndvi_soil:
+        logger.warning(
+            "ndvi_veg≈ndvi_soil (%.4f/%.4f); vegetation_cover degrades to zeros. "
+            "Pass explicit ndvi_soil/ndvi_veg for sparse-veg scenes.",
+            ndvi_veg, ndvi_soil,
+        )
         return np.zeros_like(ndvi)
 
     sc = (ndvi - ndvi_soil) / (ndvi_veg - ndvi_soil)
@@ -49,13 +68,13 @@ def vegetation_cover(
 
 
 def calc_vegetation(
-    ndvi: np.ndarray,
+    ndvi: FactorArray,
     method: str = "simplified",
-    land_use: np.ndarray | None = None,
+    land_use: FactorArray | None = None,
     ndvi_soil: float | None = None,
     ndvi_veg: float | None = None,
     alpha_coefficients: dict | None = None,
-) -> np.ndarray:
+) -> FactorArray:
     """Calculate vegetation factor C.
 
     Parameters
@@ -85,12 +104,18 @@ def calc_vegetation(
         if land_use is None:
             raise ValueError("land_use is required for method='typed'")
         coeffs = alpha_coefficients or ALPHA_COEFFICIENTS
-        result = np.zeros_like(sc, dtype=np.float64)
+        result = np.full_like(sc, fill_value=np.nan, dtype=np.float64)
         for lu_code, alpha in coeffs.items():
             mask = land_use == lu_code
-            result[mask] = np.exp(alpha * sc[mask])
+            result = np.where(mask, np.exp(alpha * sc), result)
         no_match = ~np.isin(land_use, list(coeffs.keys()))
-        result[no_match] = np.exp(-0.0438 * sc[no_match])
+        frac_no_match = float(np.mean(no_match))
+        if frac_no_match > 0:
+            logger.warning(
+                "%.2f%% of land_use cells have unknown codes; using fallback alpha=-0.0438",
+                frac_no_match * 100,
+            )
+        result = np.where(no_match, np.exp(-0.0438 * sc), result)
         return result
 
     elif method == "full_cog":

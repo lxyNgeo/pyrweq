@@ -1,6 +1,12 @@
 """Wind erosion量 (SL) calculation for RWEQ."""
 
+from __future__ import annotations
+
+import logging
+
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 def calc_sl(
@@ -8,7 +14,7 @@ def calc_sl(
     ef: np.ndarray,
     scf: np.ndarray,
     k_prime: np.ndarray,
-    c: np.ndarray,
+    c: np.ndarray | None = None,
     z: float = 50.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Calculate wind erosion量 SL and intermediate values.
@@ -19,8 +25,10 @@ def calc_sl(
 
     Parameters
     ----------
-    wf, ef, scf, k_prime, c : np.ndarray
+    wf, ef, scf, k_prime : np.ndarray
         RWEQ factor arrays.
+    c : np.ndarray or None
+        Vegetation factor. If None, treated as bare soil (C=1).
     z : float
         Downwind distance (m), default 50.
 
@@ -33,8 +41,18 @@ def calc_sl(
     qmax : np.ndarray
         Maximum transport capacity.
     """
-    product = wf * ef * scf * k_prime * c
+    if c is None:
+        product = wf * ef * scf * k_prime
+    else:
+        product = wf * ef * scf * k_prime * c
     product = np.where(product <= 0, 1e-10, product)
+
+    frac_zero = float(np.mean(product <= 1e-9))
+    if frac_zero > 0.01:
+        logger.warning(
+            "%.2f%% of cells had product<=0; clipped to 1e-10. Inspect WF/EF/SCF/K'/C inputs.",
+            frac_zero * 100,
+        )
 
     s = 150.71 * product ** (-0.3711)
     qmax = 109.8 * product

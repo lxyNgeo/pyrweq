@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 
 from pyrweq.io import read_raster, write_raster
+from pyrweq._types import RasterInput, RasterioProfile
+
+logger = logging.getLogger(__name__)
 
 
 CHINA_STANDARD = [
@@ -27,8 +32,8 @@ CHINA_LABELS = {
 
 
 def classify_erosion(
-    sl_raster: str | np.ndarray,
-    profile: dict | None = None,
+    sl_raster: RasterInput,
+    profile: RasterioProfile | None = None,
     scheme: str = "china_standard",
     output_path: str | None = None,
 ) -> tuple[np.ndarray, dict]:
@@ -64,13 +69,7 @@ def classify_erosion(
         mask = (arr >= low) & (arr < high)
         classified[mask] = code
 
-    if arr.max() >= thresholds[-1][0]:
-        classified[arr >= thresholds[-1][0]] = thresholds[-1][2]
-
     if output_path and profile is not None:
-        out_profile = profile.copy()
-        out_profile.update(dtype="int32", nodata=0, count=1, driver="GTiff", compress="lzw")
-        with __import__("rasterio").open(output_path, "w", **out_profile) as dst:
-            dst.write(classified, 1)
+        write_raster(classified, profile, output_path, dtype="int32", nodata=0)
 
     return classified, CHINA_LABELS

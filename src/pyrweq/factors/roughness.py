@@ -1,9 +1,16 @@
 """Surface roughness factor (K') calculation for RWEQ."""
 
+from __future__ import annotations
+
+import logging
+
 import numpy as np
 
+from pyrweq._types import FactorArray
 
-def calc_roughness_simple(slope_deg: np.ndarray) -> np.ndarray:
+logger = logging.getLogger(__name__)
+
+def calc_roughness_simple(slope_deg: FactorArray) -> FactorArray:
     """Simplified roughness factor using slope.
 
     K' = cos(alpha)
@@ -22,11 +29,11 @@ def calc_roughness_simple(slope_deg: np.ndarray) -> np.ndarray:
 
 
 def calc_roughness_full(
-    slope_deg: np.ndarray,
-    elevation: np.ndarray,
+    slope_deg: FactorArray,
+    elevation: FactorArray,
     terrain_level: str = "gentle",
     random_roughness: float = 0.0,
-) -> np.ndarray:
+) -> FactorArray:
     """Full roughness factor using Smith-Carson equation.
 
     K' = exp(1.86*Kr - 2.41*Kr^0.934 - 0.127*Crr)
@@ -60,6 +67,8 @@ def calc_roughness_full(
     tan_alpha = np.tan(np.radians(slope_deg))
     delta_h = tan_alpha * L * 1000.0
     kr = 0.2 * delta_h ** 2 / L
+
+    logger.info("roughness: slope range min=%.2f max=%.2f deg", float(slope_deg.min()), float(slope_deg.max()))
 
     kr = np.where(kr == 0, 1e-6, kr)
 

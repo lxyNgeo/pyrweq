@@ -1,23 +1,28 @@
-"""Weather factor (WF) calculation for RWEQ."""
+from __future__ import annotations
+
+import logging
 
 import numpy as np
 
+from pyrweq._types import FactorArray
 from pyrweq.factors.helpers import air_density, soil_moisture_factor, snow_cover_factor, wind_speed_2m
+
+logger = logging.getLogger(__name__)
 
 
 def calc_weather_factor(
-    wind_speed: np.ndarray,
-    precip: np.ndarray,
-    temp: np.ndarray,
-    elevation: np.ndarray,
-    potential_et: np.ndarray,
-    snow_depth: np.ndarray,
+    wind_speed: FactorArray,
+    precip: FactorArray,
+    temp: FactorArray,
+    elevation: FactorArray,
+    potential_et: FactorArray,
+    snow_depth: FactorArray,
     threshold_speed: float = 5.0,
     nd: float = 15.0,
     n_obs: float = 15.0,
     g: float = 9.8,
     input_10m: bool = True,
-) -> np.ndarray:
+) -> FactorArray:
     """Calculate weather factor WF.
 
     WF = sum_i[ Ui * (Ui - Ut)^2 * Nd * rho / (N * g) ] * SW * SD
@@ -53,6 +58,13 @@ def calc_weather_factor(
         Weather factor WF (kg/m).
     """
     u2 = wind_speed_2m(wind_speed) if input_10m else wind_speed.copy()
+
+    frac_above = float(np.mean(u2 >= threshold_speed))
+    if frac_above > 0.90:
+        logger.warning(
+            "%.1f%% of wind cells exceed threshold=%s m/s (erosion aggressive); check wind unit",
+            frac_above * 100, threshold_speed,
+        )
 
     u2 = np.where(u2 < threshold_speed, 0.0, u2)
 

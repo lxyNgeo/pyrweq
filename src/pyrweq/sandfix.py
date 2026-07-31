@@ -2,35 +2,40 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 
-from pyrweq.core import RWEQResult, compute_rweq
+from pyrweq._types import RasterInput
+from pyrweq.core import compute_rweq
 from pyrweq.erosion import calc_sl
+
+logger = logging.getLogger(__name__)
 
 
 def compute_sandfix(
-    wind_speed,
-    precip,
-    temp,
-    elevation,
-    potential_et,
-    snow_depth,
-    sand_content,
-    silt_content,
-    clay_content,
-    organic_matter,
-    ndvi,
-    calcium_carbonate=None,
-    land_use=None,
-    slope=None,
-    threshold_speed=5.0,
-    downwind_distance=50.0,
-    veg_method="simplified",
-    input_10m=True,
+    wind_speed: RasterInput,
+    precip: RasterInput,
+    temp: RasterInput,
+    elevation: RasterInput,
+    potential_et: RasterInput,
+    snow_depth: RasterInput,
+    sand_content: RasterInput,
+    silt_content: RasterInput,
+    clay_content: RasterInput,
+    organic_matter: RasterInput,
+    ndvi: RasterInput,
+    calcium_carbonate: RasterInput | None = None,
+    land_use: RasterInput | None = None,
+    slope: RasterInput | None = None,
+    threshold_speed: float = 5.0,
+    downwind_distance: float = 50.0,
+    veg_method: str = "simplified",
+    input_10m: bool = True,
 ) -> np.ndarray:
     """Compute sand fixation量 G = SL_potential - SL_actual.
 
-    SL_potential is computed with C=1 (bare soil, no vegetation).
+    SL_potential is computed with C=None (bare soil).
     SL_actual is computed with actual vegetation factor.
 
     Returns
@@ -50,7 +55,6 @@ def compute_sandfix(
         veg_method=veg_method, input_10m=input_10m,
     )
 
-    ones = np.ones_like(actual.sl)
-    sl_pot, _, _ = calc_sl(actual.wf, actual.ef, actual.scf, actual.k_prime, ones, z=downwind_distance)
+    sl_pot, _, _ = calc_sl(actual.wf, actual.ef, actual.scf, actual.k_prime, c=None, z=downwind_distance)
 
     return sl_pot - actual.sl

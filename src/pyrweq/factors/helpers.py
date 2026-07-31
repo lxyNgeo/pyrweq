@@ -1,9 +1,16 @@
 """Helper functions for RWEQ factor calculations."""
 
+from __future__ import annotations
+
+import logging
+
 import numpy as np
 
+from pyrweq._types import FactorArray
 
-def wind_speed_2m(wind_speed_10m: np.ndarray) -> np.ndarray:
+logger = logging.getLogger(__name__)
+
+def wind_speed_2m(wind_speed_10m: FactorArray) -> FactorArray:
     """Convert 10m wind speed to 2m height using power law.
 
     U2 = U10 * (z2 / z10)^(1/7)
@@ -11,7 +18,7 @@ def wind_speed_2m(wind_speed_10m: np.ndarray) -> np.ndarray:
     return wind_speed_10m * (2.0 / 10.0) ** (1.0 / 7.0)
 
 
-def air_density(elevation_km: np.ndarray, temp_kelvin: np.ndarray) -> np.ndarray:
+def air_density(elevation_km: FactorArray, temp_kelvin: FactorArray) -> FactorArray:
     """Calculate air density from elevation and temperature.
 
     rho = 348 * (1.013 - 0.1183*EL + 0.0048*EL^2) / T
@@ -20,12 +27,12 @@ def air_density(elevation_km: np.ndarray, temp_kelvin: np.ndarray) -> np.ndarray
 
 
 def soil_moisture_factor(
-    pet: np.ndarray,
-    precip: np.ndarray,
+    pet: FactorArray,
+    precip: FactorArray,
     irrigation: float = 0.0,
     rain_days: float = 1.0,
     nd: float = 15.0,
-) -> np.ndarray:
+) -> FactorArray:
     """Calculate soil moisture factor SW.
 
     SW = [ETp - (R + I)] / Rd * Nd / ETp
@@ -34,7 +41,7 @@ def soil_moisture_factor(
     return np.clip(sw, 0.0, 1.0)
 
 
-def snow_cover_factor(snow_depth: np.ndarray, threshold_mm: float = 25.4) -> np.ndarray:
+def snow_cover_factor(snow_depth: FactorArray, threshold_mm: float = 25.4) -> FactorArray:
     """Calculate snow cover factor SD.
 
     SD = 1 - P, where P is probability of snow depth > threshold.

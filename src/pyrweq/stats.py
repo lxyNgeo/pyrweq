@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import csv
+import logging
 
 import numpy as np
 
 from pyrweq.io import read_raster
+from pyrweq._types import RasterInput, ZonalStatsRow
 
+logger = logging.getLogger(__name__)
 
 def zonal_stats(
-    sl_raster: str | np.ndarray,
-    zone_raster: str | np.ndarray,
+    sl_raster: RasterInput,
+    zone_raster: RasterInput,
     output_csv: str | None = None,
-) -> list[dict]:
+) -> list[ZonalStatsRow]:
     """Compute zonal statistics of erosion量 by zone.
 
     Parameters
@@ -62,8 +65,10 @@ def zonal_stats(
         })
 
     if output_csv:
+        if not results:
+            return results
         with open(output_csv, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=results[0].keys())
+            writer = csv.DictWriter(f, fieldnames=list(ZonalStatsRow.__annotations__.keys()))
             writer.writeheader()
             writer.writerows(results)
 

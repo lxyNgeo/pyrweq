@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import rasterio
 from rasterio.transform import from_bounds
+from pyrweq._types import RasterioProfile
+
+logger = logging.getLogger(__name__)
 
 
-def read_raster(path: str) -> tuple[np.ndarray, dict]:
+def read_raster(path: str) -> tuple[np.ndarray, RasterioProfile]:
     """Read a GeoTIFF and return (data, profile).
 
     Returns
@@ -25,7 +30,7 @@ def read_raster(path: str) -> tuple[np.ndarray, dict]:
 
 def write_raster(
     data: np.ndarray,
-    profile: dict,
+    profile: RasterioProfile,
     path: str,
     dtype: str | None = None,
     nodata: float | None = None,
@@ -71,7 +76,7 @@ def ensure_same_shape(*arrays: np.ndarray) -> None:
         raise ValueError(f"Shape mismatch: {shapes}")
 
 
-def load_inputs(paths: dict[str, str]) -> tuple[dict[str, np.ndarray], dict]:
+def load_inputs(paths: dict[str, str]) -> tuple[dict[str, np.ndarray], RasterioProfile]:
     """Load multiple rasters, validate shapes, return arrays and base profile.
 
     Parameters

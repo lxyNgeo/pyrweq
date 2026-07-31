@@ -15,6 +15,9 @@ pyrweq is a scientific Python library for estimating wind erosion loss from rast
 - **Sand Fixation** — vegetation protective effect quantification
 - **Erosion Intensity Classification** — 6-level standard (SL190-2007)
 - **Zonal Statistics** — per-zone summary of erosion results
+- **Parallel Factor Computation** — factors computed concurrently via threads (`n_workers`)
+- **Dask Backend** — lazy array computation for large rasters (`backend="dask"`)
+- **Structured Logging** — module-level loggers with info/warning messages
 
 ## Installation
 
@@ -64,6 +67,42 @@ print(f"Mean erosion: {result.sl.mean():.2f}")
 classes = classify_erosion(result.sl)
 ```
 
+## Performance options
+
+By default the five RWEQ factors are computed concurrently using a thread pool
+(`n_workers`, default `min(5, cpu_count)`; pass `n_workers=1` for sequential
+execution):
+
+```python
+result = compute_rweq(..., n_workers=1)   # sequential
+result = compute_rweq(..., n_workers=8)   # 8 threads
+```
+
+For rasters too large to fit in memory, pass `dask.array` inputs with
+`backend="dask"` to keep the computation lazy until you call `.compute()`:
+
+```python
+import dask.array as da
+
+wind = da.from_zarr("wind.zarr", chunks=(512, 512))
+ndvi = da.from_zarr("ndvi.zarr", chunks=(512, 512))
+# ... all 11 inputs as dask arrays ...
+result = compute_rweq(..., backend="dask")
+sl = result.sl.compute()   # triggers the full graph
+```
+
+Note: NDVI percentiles (5th/95th) are global reductions; with dask inputs they
+are computed eagerly once at the start. All factor arrays remain lazy.
+
+## Logging
+
+pyrweq uses the standard `logging` module. To see progress and warnings:
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO)  # or attach a handler to the "pyrweq" logger
+```
+
 ## Project Structure
 
 ```
@@ -75,6 +114,7 @@ pyrweq/
 │   ├── classify.py      # Intensity classification
 │   ├── sandfix.py       # Sand fixation
 │   ├── stats.py         # Zonal statistics
+│   ├── _types.py        # Shared type aliases & dask detection
 │   └── factors/         # Factor calculations
 │       ├── weather.py
 │       ├── erodibility.py
