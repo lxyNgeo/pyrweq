@@ -13,6 +13,7 @@ pyrweq/
 │   ├── classify.py      # 侵蚀强度分级（SL190-2007）
 │   ├── sandfix.py       # 防风固沙量 G = SL_pot(C=1) - SL_actual
 │   ├── stats.py         # 分区统计
+│   ├── cli.py           # 命令行入口（compute/sandfix/classify/stats）
 │   ├── _types.py        # 类型别名（RasterInput / FactorArray / RasterioProfile）
 │   └── factors/         # 各因子计算（纯函数，不读文件）
 │       ├── weather.py   # WF
@@ -21,6 +22,9 @@ pyrweq/
 │       ├── roughness.py # K'
 │       ├── vegetation.py   # C
 │       └── helpers.py   # 共用小函数（风速换算、空气密度、SW、SCF）
+├── examples/
+│   ├── benchmark.py     # 性能基准（numpy/dask × seq/par）
+│   └── rweq_demo.ipynb  # 全流程示例 notebook
 └── tests/               # unittest 风格（不用 pytest）
 ```
 
@@ -29,15 +33,18 @@ pyrweq/
 1. **factors/ 是纯函数层**：只接受数组、返回数组，不读写文件、不抛业务日志以外的副作用。I/O 全在 io.py 和 core.py。
 2. **数组类型透明**：因子函数签名用 `FactorArray`（numpy 或 dask 均可），内部运算必须同时兼容两者——禁止 `arr.shape = ...`（NumPy 2.5 弃用）、禁止原地修改、mask 赋值用 `np.where` 而不是 `result[mask] = ...`（后者在 dask 上不可用）。
 3. **可选依赖零硬依赖**：dask 用 `type(arr).__module__.startswith("dask.array")` 检测 + try/except 导入，不 import 就崩。
-4. **日志**：模块级 `logger = logging.getLogger(__name__)`，`pyrweq` 根 logger 带 NullHandler。警告用 `logger.warning`（异常阈值条件），常规进度用 `logger.info`。不要 print。
+4. **日志**：模块级 `logger = logging.getLogger(__name__)`，`pyrweq` 根 logger 带 NullHandler。警告用 `logger.warning`（异常阈值条件），常规进度用 `logger.info`。不要 print（CLI 除外）。
+5. **nodata 语义**：读栅格默认 `masked=True`（nodata→NaN），NaN 穿过所有因子运算传播；写出时 `write_raster` 默认 NaN→nodata。统计必须用 nan* 函数。
+6. **argparse help 字符串禁裸 `%`**（会被当格式占位符报错），用 "percent" 等措辞。
 
 ## 测试约定
 
 - 测试用 **unittest** 风格（`import unittest` + `TestCase`），不用 pytest，因为当前环境没装 pytest。
 - 运行：`cd /d/pyrweq && PYTHONPATH=src python -m unittest discover -s tests -v`
-- 改动后必须跑全套测试，全部通过才算完成。
+- 改动后必须跑全套测试（当前 55+），全部通过才算完成。
 - dask 相关测试用 `@unittest.skipUnless(_HAS_DASK, ...)` 保护，未装 dask 时跳过而非失败。
-- 新功能必须有对应测试（因子边界、集成、并行一致性、日志行为）。
+- 新功能必须有对应测试（因子边界、集成、并行一致性、日志行为、CLI、nodata）。
+- notebook 改动后要验证可执行：提取 code cell 顺序执行（见会话记录）。
 
 ## 提交约定
 
