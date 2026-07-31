@@ -32,6 +32,10 @@ def compute_sandfix(
     downwind_distance: float = 50.0,
     veg_method: str = "simplified",
     input_10m: bool = True,
+    n_workers: int | None = None,
+    backend: str = "numpy",
+    chunks: tuple[int, int] | str = "auto",
+    masked: bool = True,
 ) -> np.ndarray:
     """Compute sand fixation量 G = SL_potential - SL_actual.
 
@@ -53,6 +57,7 @@ def compute_sandfix(
         slope=slope, threshold_speed=threshold_speed,
         downwind_distance=downwind_distance,
         veg_method=veg_method, input_10m=input_10m,
+        n_workers=n_workers, backend=backend, chunks=chunks, masked=masked,
     )
 
     sl_pot, _, _ = calc_sl(actual.wf, actual.ef, actual.scf, actual.k_prime, c=None, z=downwind_distance)

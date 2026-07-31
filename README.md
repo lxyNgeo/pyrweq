@@ -103,6 +103,31 @@ choice for rasters that do not fit.
 python examples/benchmark.py 500 1000 2000
 ```
 
+## Command-line interface
+
+After installing, the `pyrweq` command is available:
+
+```bash
+# Single-period computation (writes wf/ef/scf/k_prime/c/s/qmax/sl rasters)
+pyrweq compute --wind-speed wind.tif --precip prec.tif --temp temp.tif \
+    --elevation dem.tif --potential-et pet.tif --snow-depth snow.tif \
+    --sand-content sand.tif --silt-content silt.tif --clay-content clay.tif \
+    --organic-matter om.tif --ndvi ndvi.tif --output-dir output/
+
+# Sand fixation
+pyrweq sandfix ... --output-dir output/
+
+# Erosion intensity classification (SL190-2007)
+pyrweq classify --input output/sl.tif --output output/class.tif
+
+# Zonal statistics
+pyrweq stats --sl output/sl.tif --zones landuse.tif --output stats.csv
+```
+
+Common options: `--backend numpy|dask`, `--n-workers N`, `--chunks ROWS,COLS`,
+`--veg-method simplified|typed|full_cog`, `--threshold 5.0`, `--distance 50`,
+`--wind-height 10m|2m`, `--no-masked`, `-v` for INFO logs.
+
 ## Logging
 
 pyrweq uses the standard `logging` module. To see progress and warnings:
