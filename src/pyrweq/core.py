@@ -35,6 +35,30 @@ class RWEQResult:
     profile: RasterioProfile | None
 
 
+@dataclass
+class YearlyRWEQResult:
+    """Result container for multi-period (e.g. monthly) RWEQ runs.
+
+    Attributes
+    ----------
+    sl : FactorArray
+        Total erosion over all periods (sum of per-period SL).
+    months : list[RWEQResult]
+        Per-period results, in input order.
+    """
+    sl: FactorArray
+    months: list[RWEQResult]
+
+    FACTOR_NAMES = ("wf", "ef", "scf", "k_prime", "c", "s", "qmax")
+
+    def __getattr__(self, name: str) -> FactorArray:
+        """Factor access: return the period-mean of the requested factor."""
+        if name in self.FACTOR_NAMES:
+            vals = [getattr(m, name) for m in self.months]
+            return np.nanmean(np.stack(vals), axis=0)
+        raise AttributeError(f"YearlyRWEQResult has no attribute {name!r}")
+
+
 def compute_rweq(
     wind_speed: RasterInput,
     precip: RasterInput,
@@ -230,3 +254,77 @@ def compute_rweq(
     )
 
     return RWEQResult(sl=sl, s=s, qmax=qmax, wf=wf, ef=ef, scf=scf, k_prime=k_prime, c=c, profile=base_profile)
+
+
+def compute_rweq_yearly(
+    monthly_inputs: list[dict],
+    output_dir: str | None = None,
+    n_workers: int | None = None,
+    backend: str = "numpy",
+    chunks: tuple[int, int] | str = "auto",
+    masked: bool = True,
+    **factor_kwargs,
+) -> YearlyRWEQResult:
+    """Compute multi-period (typically 12 monthly) RWEQ erosion totals.
+
+    Each period is computed with :func:`compute_rweq` and the per-period
+    erosion amounts are summed into an annual (or multi-period) total.
+    This follows the standard RWEQ workflow of computing WF per month and
+    summing monthly erosion.
+
+    Parameters
+    ----------
+    monthly_inputs : list of dict
+        One dict per period, each with the same keys as :func:`compute_rweq`
+        (wind_speed, precip, ..., ndvi, optional calcium_carbonate/land_use/
+        slope). Keys may be GeoTIFF paths or arrays; mixing is allowed but
+        shapes must match. All periods must use the same input kind (all
+        paths or all arrays).
+    output_dir : str or None
+        If provided, write the total erosion raster (sl_yearly.tif) and the
+        period-mean factors.
+    n_workers, backend, chunks, masked :
+        Passed through to :func:`compute_rweq` for each period.
+    **factor_kwargs :
+        Passed through to :func:`compute_rweq` (threshold_speed,
+        downwind_distance, veg_method, input_10m, ...).
+
+    Returns
+    -------
+    YearlyRWEQResult
+        sl is the summed total; ``.months`` holds per-period RWEQResult;
+        factor attributes (``.wf``, ``.ef``, ...) expose period means.
+    """
+    if not monthly_inputs:
+        raise ValueError("monthly_inputs must contain at least one period dict")
+
+    t_start = time.time()
+    months: list[RWEQResult] = []
+    for i, inputs in enumerate(monthly_inputs):
+        t0 = time.time()
+        res = compute_rweq(
+            **inputs,
+            n_workers=n_workers, backend=backend, chunks=chunks, masked=masked,
+            **factor_kwargs,
+        )
+        months.append(res)
+        logger.info("period %d/%d done in %.2fs", i + 1, len(monthly_inputs), time.time() - t0)
+
+    sl = np.sum(np.stack([m.sl for m in months]), axis=0)
+
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        profile = months[0].profile
+        if profile is not None:
+            write_raster(sl, profile, os.path.join(output_dir, "sl_yearly.tif"))
+            for name in YearlyRWEQResult.FACTOR_NAMES:
+                write_raster(
+                    np.nanmean(np.stack([getattr(m, name) for m in months]), axis=0),
+                    profile, os.path.join(output_dir, f"{name}_mean.tif"),
+                )
+
+    logger.info(
+        "compute_rweq_yearly done: %d periods, sl.sum=%.4f elapsed=%.2fs",
+        len(monthly_inputs), float(np.nansum(sl)), time.time() - t_start,
+    )
+    return YearlyRWEQResult(sl=sl, months=months)
