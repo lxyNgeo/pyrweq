@@ -29,6 +29,15 @@ class TestHelpers(unittest.TestCase):
         self.assertGreaterEqual(sw.item(), 0.0)
         self.assertLessEqual(sw.item(), 1.0)
 
+    def test_soil_moisture_zero_pet_no_divzero(self):
+        # pet==0 must yield SW=0 without warnings/nan (e.g. winter months)
+        pet = np.array([0.0, 5.0])
+        with np.errstate(all="raise"):
+            sw = soil_moisture_factor(pet=pet, precip=np.array([0.0, 1.0]))
+        self.assertEqual(sw[0].item(), 0.0)
+        self.assertTrue(np.isfinite(sw).all())
+        self.assertEqual(sw.dtype, pet.dtype)
+
     def test_snow_cover_factor(self):
         self.assertEqual(snow_cover_factor(np.array([50.0])).item(), 0.0)
         self.assertEqual(snow_cover_factor(np.array([5.0])).item(), 1.0)

@@ -28,6 +28,78 @@ def read_raster(path: str) -> tuple[np.ndarray, RasterioProfile]:
     return data, profile
 
 
+def read_raster_lazy(
+    path: str,
+    chunks: tuple[int, int] | str = "auto",
+) -> tuple["da.Array", RasterioProfile]:
+    """Read a GeoTIFF lazily as a dask array without loading it into RAM.
+
+    Each rasterio block (or the given ``chunks``) is read on demand via
+    ``dask.delayed`` window reads, so memory use stays proportional to one
+    chunk instead of the full raster.
+
+    Parameters
+    ----------
+    path : str
+        GeoTIFF path.
+    chunks : (rows, cols) or "auto"
+        Chunk size in pixels. "auto" uses the file's native block size.
+
+    Returns
+    -------
+    arr : dask.array.Array
+        Lazy 2D array (eager only when computed).
+    profile : dict
+        Rasterio profile (same as read_raster).
+
+    Notes
+    -----
+    Requires ``dask[array]``. The returned array preserves nodata values
+    (no masking), matching :func:`read_raster` semantics.
+    """
+    try:
+        import dask.array as da
+        from dask import delayed
+    except ImportError as e:
+        raise ImportError(
+            "read_raster_lazy requires dask[array]. Install with: pip install pyrweq[dask]"
+        ) from e
+
+    with rasterio.open(path) as src:
+        profile = src.profile.copy()
+        height, width = src.height, src.width
+        dtype = profile["dtype"]
+        native = src.block_shapes[0]  # (rows, cols) per block
+
+    if chunks == "auto":
+        block_rows, block_cols = native
+    else:
+        block_rows, block_cols = chunks
+    if block_rows <= 0 or block_cols <= 0:
+        raise ValueError(f"chunks must be positive, got {chunks}")
+
+    @delayed
+    def _read_window(row0: int, col0: int, rows: int, cols: int) -> np.ndarray:
+        from rasterio.windows import Window
+
+        with rasterio.open(path) as src:
+            return src.read(1, window=Window(col0, row0, cols, rows))
+
+    grid = []
+    for row0 in range(0, height, block_rows):
+        row_blocks = []
+        for col0 in range(0, width, block_cols):
+            h = min(block_rows, height - row0)
+            w = min(block_cols, width - col0)
+            arr = da.from_delayed(
+                _read_window(row0, col0, h, w), shape=(h, w), dtype=dtype
+            )
+            row_blocks.append(arr)
+        grid.append(row_blocks)
+
+    return da.block(grid), profile
+
+
 def write_raster(
     data: np.ndarray,
     profile: RasterioProfile,

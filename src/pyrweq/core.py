@@ -16,7 +16,7 @@ from pyrweq.factors.crust import calc_crust_factor
 from pyrweq.factors.roughness import calc_roughness_simple
 from pyrweq.factors.vegetation import calc_vegetation
 from pyrweq.erosion import calc_sl
-from pyrweq.io import read_raster, write_raster
+from pyrweq.io import read_raster, read_raster_lazy, write_raster
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,7 @@ def compute_rweq(
     output_dir: str | None = None,
     n_workers: int | None = None,
     backend: str = "numpy",
+    chunks: tuple[int, int] | str = "auto",
 ) -> RWEQResult:
     """Compute RWEQ wind erosion量.
 
@@ -90,6 +91,10 @@ def compute_rweq(
     backend : str
         "numpy" (default) or "dask". When "numpy" and dask arrays are detected,
         a warning is logged. When "dask", requires dask[array].
+    chunks : (rows, cols) or "auto"
+        Only used with backend="dask" and GeoTIFF path inputs: chunk size for
+        lazy reading (pixels). "auto" uses each file's native block size.
+        Array inputs are never rechunked.
 
     Returns
     -------
@@ -98,30 +103,34 @@ def compute_rweq(
     t_start = time.time()
     base_profile = None
 
-    def _load_with_profile(v):
+    def _load_with_profile(v, lazy: bool = False):
         nonlocal base_profile
         if isinstance(v, str):
-            arr, prof = read_raster(v)
+            if lazy:
+                arr, prof = read_raster_lazy(v, chunks=chunks)
+            else:
+                arr, prof = read_raster(v)
             if base_profile is None:
                 base_profile = prof
             return arr
         return v
 
-    wind = _load_with_profile(wind_speed)
-    pr = _load_with_profile(precip)
-    tmp = _load_with_profile(temp)
-    ele = _load_with_profile(elevation)
-    pet = _load_with_profile(potential_et)
-    snow = _load_with_profile(snow_depth)
-    sa = _load_with_profile(sand_content)
-    si = _load_with_profile(silt_content)
-    cl = _load_with_profile(clay_content)
-    om = _load_with_profile(organic_matter)
-    ndvi_arr = _load_with_profile(ndvi)
+    lazy = backend == "dask"
+    wind = _load_with_profile(wind_speed, lazy)
+    pr = _load_with_profile(precip, lazy)
+    tmp = _load_with_profile(temp, lazy)
+    ele = _load_with_profile(elevation, lazy)
+    pet = _load_with_profile(potential_et, lazy)
+    snow = _load_with_profile(snow_depth, lazy)
+    sa = _load_with_profile(sand_content, lazy)
+    si = _load_with_profile(silt_content, lazy)
+    cl = _load_with_profile(clay_content, lazy)
+    om = _load_with_profile(organic_matter, lazy)
+    ndvi_arr = _load_with_profile(ndvi, lazy)
 
-    caco3 = _load_with_profile(calcium_carbonate) if calcium_carbonate is not None else None
-    lu = _load_with_profile(land_use) if land_use is not None else None
-    slp = _load_with_profile(slope) if slope is not None else np.zeros_like(wind)
+    caco3 = _load_with_profile(calcium_carbonate, lazy) if calcium_carbonate is not None else None
+    lu = _load_with_profile(land_use, lazy) if land_use is not None else None
+    slp = _load_with_profile(slope, lazy) if slope is not None else np.zeros_like(wind)
 
     if base_profile is None:
         # All inputs were arrays; create a minimal placeholder profile

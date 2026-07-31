@@ -78,21 +78,30 @@ result = compute_rweq(..., n_workers=1)   # sequential
 result = compute_rweq(..., n_workers=8)   # 8 threads
 ```
 
-For rasters too large to fit in memory, pass `dask.array` inputs with
-`backend="dask"` to keep the computation lazy until you call `.compute()`:
+For rasters too large to fit in memory, pass `dask.array` inputs — or simply
+GeoTIFF **paths** with `backend="dask"` — to keep the computation lazy until
+you call `.compute()`:
 
 ```python
-import dask.array as da
-
-wind = da.from_zarr("wind.zarr", chunks=(512, 512))
-ndvi = da.from_zarr("ndvi.zarr", chunks=(512, 512))
-# ... all 11 inputs as dask arrays ...
-result = compute_rweq(..., backend="dask")
+# Path inputs are read lazily in blocks; memory stays proportional to one chunk
+result = compute_rweq(
+    wind_speed="wind.tif", precip="precip.tif", ... ndvi="ndvi.tif",
+    backend="dask",      # lazy windowed reads + lazy math
+    chunks="auto",       # chunk size for reads (native block size), or (512, 512)
+)
 sl = result.sl.compute()   # triggers the full graph
 ```
 
 Note: NDVI percentiles (5th/95th) are global reductions; with dask inputs they
 are computed eagerly once at the start. All factor arrays remain lazy.
+
+Rule of thumb (see `examples/benchmark.py`): numpy is 5-10x faster for
+rasters that fit in RAM; dask uses a fraction of the memory and is the right
+choice for rasters that do not fit.
+
+```bash
+python examples/benchmark.py 500 1000 2000
+```
 
 ## Logging
 

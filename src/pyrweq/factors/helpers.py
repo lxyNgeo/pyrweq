@@ -36,9 +36,13 @@ def soil_moisture_factor(
     """Calculate soil moisture factor SW.
 
     SW = [ETp - (R + I)] / Rd * Nd / ETp
+
+    Cells with pet==0 (no evaporative demand, e.g. winter months) get SW=0
+    instead of a divide-by-zero.
     """
-    sw = (pet - (precip + irrigation)) / rain_days * nd / pet
-    return np.clip(sw, 0.0, 1.0)
+    safe_pet = np.where(pet == 0, 1.0, pet)
+    sw = (pet - (precip + irrigation)) / rain_days * nd / safe_pet
+    return np.where(pet == 0, 0.0, np.clip(sw, 0.0, 1.0))
 
 
 def snow_cover_factor(snow_depth: FactorArray, threshold_mm: float = 25.4) -> FactorArray:
@@ -48,5 +52,6 @@ def snow_cover_factor(snow_depth: FactorArray, threshold_mm: float = 25.4) -> Fa
     Input is snow depth array; P is computed as fraction of cells exceeding threshold.
     For per-pixel computation with time series, pass the probability directly.
     """
-    p = np.where(snow_depth > threshold_mm, 1.0, 0.0)
+    # astype keeps the input dtype (np.where with python scalars would promote to float64)
+    p = (snow_depth > threshold_mm).astype(snow_depth.dtype)
     return 1.0 - p
