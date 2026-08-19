@@ -19,7 +19,7 @@ def calc_weather_factor(
     snow_depth: FactorArray,
     threshold_speed: float = 5.0,
     nd: float = 15.0,
-    n_obs: float = 15.0,
+    n_obs: float | None = None,
     g: float = 9.8,
     input_10m: bool = True,
 ) -> FactorArray:
@@ -44,9 +44,12 @@ def calc_weather_factor(
     threshold_speed : float
         Threshold wind speed for erosion (m/s), default 5.0.
     nd : float
-        Number of days in the calculation period, default 15 (half-month).
-    n_obs : float
-        Number of wind speed observations, default 15.
+        Number of days in the calculation period. RWEQ natively uses a
+        half-month period (nd=15); monthly runs should pass nd=30 (or
+        365.25/12). Also drives the soil-moisture factor SW.
+    n_obs : float or None
+        Number of wind speed observations in the period. None (default)
+        uses nd (one observation per day).
     g : float
         Gravitational acceleration (m/s^2), default 9.8.
     input_10m : bool
@@ -58,6 +61,8 @@ def calc_weather_factor(
         Weather factor WF (kg/m).
     """
     u2 = wind_speed_2m(wind_speed) if input_10m else wind_speed.copy()
+    if n_obs is None:
+        n_obs = nd
 
     frac_above = float(np.mean(u2 >= threshold_speed))
     if frac_above > 0.90:

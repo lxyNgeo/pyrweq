@@ -25,17 +25,25 @@ def _month_inputs(seed, scale=1.0, shape=(10, 10)):
 
 
 class TestYearly(unittest.TestCase):
+    # yearly injects nd = 365.25 / n_periods into each period; reference
+    # computations must use the same value.
+    ND = 365.25 / 3
+
     def test_yearly_equals_sum_of_months(self):
         inputs = [_month_inputs(100 + i) for i in range(3)]
         yearly = compute_rweq_yearly(inputs, n_workers=1)
-        expected = np.sum([compute_rweq(**m, n_workers=1).sl for m in inputs], axis=0)
+        expected = np.sum(
+            [compute_rweq(**m, n_workers=1, nd=self.ND).sl for m in inputs], axis=0
+        )
         self.assertTrue(np.allclose(yearly.sl, expected))
         self.assertEqual(len(yearly.months), 3)
 
     def test_factor_means_exposed(self):
         inputs = [_month_inputs(200 + i) for i in range(3)]
         yearly = compute_rweq_yearly(inputs, n_workers=1)
-        wf_mean = np.mean([compute_rweq(**m, n_workers=1).wf for m in inputs], axis=0)
+        wf_mean = np.mean(
+            [compute_rweq(**m, n_workers=1, nd=self.ND).wf for m in inputs], axis=0
+        )
         self.assertTrue(np.allclose(yearly.wf, wf_mean))
         ef_mean = np.mean([m.ef for m in yearly.months], axis=0)
         self.assertTrue(np.allclose(yearly.ef, ef_mean))

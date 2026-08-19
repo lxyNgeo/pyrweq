@@ -78,6 +78,8 @@ def compute_rweq(
     downwind_distance: float = 50.0,
     veg_method: str = "simplified",
     input_10m: bool = True,
+    nd: float = 15.0,
+    n_obs: float | None = None,
     output_dir: str | None = None,
     n_workers: int | None = None,
     backend: str = "numpy",
@@ -108,6 +110,12 @@ def compute_rweq(
         "simplified", "typed", or "full_cog".
     input_10m : bool
         If True, convert wind speed from 10m to 2m.
+    nd : float
+        Days in the calculation period. RWEQ natively uses a half-month
+        period (nd=15, default); monthly runs should pass nd=30. Affects WF
+        and the soil-moisture factor SW.
+    n_obs : float or None
+        Wind speed observations in the period. None (default) uses nd.
     output_dir : str or None
         If provided, write all intermediate and final rasters.
     n_workers : int or None
@@ -203,6 +211,7 @@ def compute_rweq(
         "weather": lambda: calc_weather_factor(
             wind, pr, tmp, ele, pet, snow,
             threshold_speed=threshold_speed, input_10m=input_10m,
+            nd=nd, n_obs=n_obs,
         ),
         "erodibility": lambda: calc_erodibility(sa, si, cl, om, caco3),
         "crust": lambda: calc_crust_factor(cl, om),
@@ -258,6 +267,7 @@ def compute_rweq(
 
 def compute_rweq_yearly(
     monthly_inputs: list[dict],
+    period_days: float | None = None,
     output_dir: str | None = None,
     n_workers: int | None = None,
     backend: str = "numpy",
@@ -279,7 +289,14 @@ def compute_rweq_yearly(
         (wind_speed, precip, ..., ndvi, optional calcium_carbonate/land_use/
         slope). Keys may be GeoTIFF paths or arrays; mixing is allowed but
         shapes must match. All periods must use the same input kind (all
-        paths or all arrays).
+        paths or all arrays). A period dict may carry its own ``nd``/
+        ``n_obs`` keys for per-period control.
+    period_days : float or None
+        Days per period, passed as ``nd`` to each period's computation
+        unless the user supplied ``nd`` explicitly (in ``factor_kwargs`` or
+        in a period dict). If None (default), it is inferred as
+        365.25 / len(monthly_inputs) (uniform periods; 12 periods -> ~30.4).
+        The RWEQ-native half-month value would be 15.
     output_dir : str or None
         If provided, write the total erosion raster (sl_yearly.tif) and the
         period-mean factors.
@@ -298,14 +315,34 @@ def compute_rweq_yearly(
     if not monthly_inputs:
         raise ValueError("monthly_inputs must contain at least one period dict")
 
+    overlap = set(factor_kwargs) & {k for m in monthly_inputs for k in m}
+    if overlap:
+        raise ValueError(
+            f"factor_kwargs {sorted(overlap)} collide with keys in period dicts; "
+            "pass them per-period or globally, not both"
+        )
+
+    if "nd" not in factor_kwargs and all("nd" not in m for m in monthly_inputs):
+        eff_nd = period_days if period_days is not None else 365.25 / len(monthly_inputs)
+        if abs(eff_nd - 15.0) > 1e-9:
+            logger.info(
+                "yearly: nd inferred as %.2f days/period (%s periods); pass period_days or nd to override",
+                eff_nd, len(monthly_inputs),
+            )
+    else:
+        eff_nd = None  # explicit nd somewhere; do not inject
+
     t_start = time.time()
     months: list[RWEQResult] = []
     for i, inputs in enumerate(monthly_inputs):
         t0 = time.time()
+        per_kwargs = dict(factor_kwargs)
+        if eff_nd is not None and "nd" not in inputs:
+            per_kwargs["nd"] = eff_nd
         res = compute_rweq(
             **inputs,
             n_workers=n_workers, backend=backend, chunks=chunks, masked=masked,
-            **factor_kwargs,
+            **per_kwargs,
         )
         months.append(res)
         logger.info("period %d/%d done in %.2fs", i + 1, len(monthly_inputs), time.time() - t0)
