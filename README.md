@@ -30,11 +30,13 @@ pyrweq is a scientific Python library for estimating wind erosion loss from rast
 
 ## Installation
 
+pyrweq is not published on PyPI — install directly from GitHub:
+
 ```bash
-pip install pyrweq
+pip install "git+https://github.com/lxyNgeo/pyrweq.git"
 ```
 
-Or install from source:
+For development (editable install):
 
 ```bash
 git clone https://github.com/lxyNgeo/pyrweq.git
@@ -42,13 +44,34 @@ cd pyrweq
 pip install -e .
 ```
 
+Or install from a downloaded archive (no git required):
+
+```bash
+pip install https://github.com/lxyNgeo/pyrweq/archive/refs/heads/main.zip
+```
+
 ### Optional dependencies
 
 ```bash
-pip install "pyrweq[geo]"    # geopandas support
-pip install "pyrweq[plot]"   # matplotlib support
-pip install "pyrweq[dev]"    # pytest for development
+pip install "pyrweq[geo] @ git+https://github.com/lxyNgeo/pyrweq.git"    # geopandas support
+pip install "pyrweq[plot] @ git+https://github.com/lxyNgeo/pyrweq.git"   # matplotlib support
+pip install "pyrweq[dask] @ git+https://github.com/lxyNgeo/pyrweq.git"   # dask backend
+pip install "pyrweq[dev] @ git+https://github.com/lxyNgeo/pyrweq.git"    # dask + benchmark/notebook tools
 ```
+
+(Requires pip >= 21.2 for the `[extra] @ git+...` syntax; with older pip use
+`pip install "git+...#egg=pyrweq[geo]"`.)
+
+Tests run with the standard library, no pytest needed:
+
+```bash
+cd pyrweq
+PYTHONPATH=src python -m unittest discover -s tests -v
+```
+
+> **Note** — `pip install pyrweq` will NOT work: the name is not registered
+> on PyPI and may point to an unrelated package if someone registers it
+> later. Always install from the git URL above.
 
 ## Quick Start
 

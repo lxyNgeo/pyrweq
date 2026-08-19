@@ -76,7 +76,7 @@ def read_raster_lazy(
         from dask import delayed
     except ImportError as e:
         raise ImportError(
-            "read_raster_lazy requires dask[array]. Install with: pip install pyrweq[dask]"
+            "read_raster_lazy requires dask[array]. Install it with: pip install dask[array]"
         ) from e
 
     with rasterio.open(path) as src:

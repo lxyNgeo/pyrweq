@@ -63,7 +63,7 @@ class TestDask(unittest.TestCase):
                 ndvi=np.full(shape, 0.3, dtype=np.float32),
                 backend="dask",
             )
-        self.assertIn("pip install pyrweq[dask]", str(ctx.exception))
+        self.assertIn("pip install dask[array]", str(ctx.exception))
 
 
 if __name__ == "__main__":

@@ -201,7 +201,7 @@ def compute_rweq(
             import dask.array as da  # noqa: F401
         except ImportError as e:
             raise ImportError(
-                "backend='dask' requires dask[array]. Install with: pip install pyrweq[dask]"
+                "backend='dask' requires dask[array]. Install it with: pip install dask[array]"
             ) from e
         if not all(is_dask_array(x) for x in [wind, wind_freq, pr, tmp, ele, pet, snow, sa, si, cl, om, ndvi_arr] if x is not None):
             raise TypeError("dask backend requires all array inputs to be dask.array.Array")
