@@ -60,6 +60,12 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
                         help="Threshold wind speed m/s (default 5.0)")
     parser.add_argument("--distance", type=float, default=50.0,
                         help="Downwind distance z m (default 50)")
+    parser.add_argument("--nd", type=float, default=15.0,
+                        help="Days in the calculation period (default 15, "
+                             "RWEQ half-month; use 30 for monthly runs)")
+    parser.add_argument("--n-obs", type=float, default=None,
+                        help="Wind speed observations in the period "
+                             "(default: same as --nd)")
     parser.add_argument("--veg-method", default="simplified",
                         choices=["simplified", "typed", "full_cog"],
                         help="Vegetation factor method (default simplified)")
@@ -100,6 +106,8 @@ def _common_kwargs(args: argparse.Namespace) -> dict:
     return dict(
         threshold_speed=args.threshold,
         downwind_distance=args.distance,
+        nd=args.nd,
+        n_obs=args.n_obs,
         veg_method=args.veg_method,
         input_10m=args.wind_height == "10m",
         backend=args.backend,
@@ -128,7 +136,8 @@ def cmd_sandfix(args: argparse.Namespace) -> None:
 
 def cmd_classify(args: argparse.Namespace) -> None:
     classified, labels = classify_erosion(
-        args.input, output_path=args.output, scheme=args.scheme
+        args.input, output_path=args.output, scheme=args.scheme,
+        cell_size=args.cell_size,
     )
     classes, counts = np.unique(classified, return_counts=True)
     for code, count in zip(classes, counts):
@@ -166,6 +175,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_classify.add_argument("--input", required=True, metavar="TIF", help="SL raster")
     p_classify.add_argument("--output", metavar="TIF", help="classified raster output")
     p_classify.add_argument("--scheme", default="china_standard")
+    p_classify.add_argument("--cell-size", type=float, default=None, metavar="M",
+                            help="Grid cell size in metres. Provide this when the "
+                                 "input is native RWEQ SL (g/m) instead of a modulus "
+                                 "(t/km2/a); it is converted before classifying")
     p_classify.set_defaults(func=cmd_classify)
 
     p_stats = sub.add_parser("stats", help="zonal statistics of SL by zones")

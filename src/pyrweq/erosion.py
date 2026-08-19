@@ -35,11 +35,13 @@ def calc_sl(
     Returns
     -------
     sl : np.ndarray
-        Wind erosion量 (same units as input factors produce).
+        Wind erosion量 in RWEQ-native g/m (mass eroded per metre of
+        field width). Convert to t/(km^2 * a) with
+        ``pyrweq.units.g_per_m_to_t_per_km2`` before classifying.
     s : np.ndarray
         Critical field length (m).
     qmax : np.ndarray
-        Maximum transport capacity.
+        Maximum transport capacity (g/m).
     """
     if c is None:
         product = wf * ef * scf * k_prime

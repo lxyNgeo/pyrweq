@@ -28,10 +28,13 @@ def compute_sandfix(
     calcium_carbonate: RasterInput | None = None,
     land_use: RasterInput | None = None,
     slope: RasterInput | None = None,
+    wind_freq: object | None = None,
     threshold_speed: float = 5.0,
     downwind_distance: float = 50.0,
     veg_method: str = "simplified",
     input_10m: bool = True,
+    nd: float = 15.0,
+    n_obs: float | None = None,
     n_workers: int | None = None,
     backend: str = "numpy",
     chunks: tuple[int, int] | str = "auto",
@@ -45,7 +48,9 @@ def compute_sandfix(
     Returns
     -------
     np.ndarray
-        Sand fixation量 (kg/m^2).
+        Sand fixation量 G in g/m, the same native RWEQ unit as SL.
+        Convert to t/(km^2 * a) with ``pyrweq.units.g_per_m_to_t_per_km2``
+        and the grid cell size.
     """
     actual = compute_rweq(
         wind_speed=wind_speed, precip=precip, temp=temp,
@@ -54,9 +59,11 @@ def compute_sandfix(
         silt_content=silt_content, clay_content=clay_content,
         organic_matter=organic_matter, ndvi=ndvi,
         calcium_carbonate=calcium_carbonate, land_use=land_use,
-        slope=slope, threshold_speed=threshold_speed,
+        slope=slope, wind_freq=wind_freq,
+        threshold_speed=threshold_speed,
         downwind_distance=downwind_distance,
         veg_method=veg_method, input_10m=input_10m,
+        nd=nd, n_obs=n_obs,
         n_workers=n_workers, backend=backend, chunks=chunks, masked=masked,
     )
 

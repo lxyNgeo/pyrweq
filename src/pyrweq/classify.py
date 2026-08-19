@@ -8,6 +8,7 @@ import numpy as np
 
 from pyrweq.io import read_raster, write_raster
 from pyrweq._types import RasterInput, RasterioProfile
+from pyrweq.units import g_per_m_to_t_per_km2
 
 logger = logging.getLogger(__name__)
 
@@ -35,18 +36,31 @@ def classify_erosion(
     sl_raster: RasterInput,
     profile: RasterioProfile | None = None,
     scheme: str = "china_standard",
+    cell_size: float | tuple[float, float] | None = None,
     output_path: str | None = None,
 ) -> tuple[np.ndarray, dict]:
     """Classify wind erosion量 into intensity classes.
 
+    The SL190-2007 thresholds are expressed in t/(km^2 * a). Two input
+    conventions are supported:
+
+    - ``cell_size=None`` (default): ``sl_raster`` already holds the
+      erosion modulus in t/(km^2 * a) (or equivalently kg/m^2).
+    - ``cell_size=<metres>``: ``sl_raster`` holds RWEQ-native SL in g/m
+      (the direct output of ``calc_sl`` / ``compute_rweq``) and is
+      converted to a modulus before classification.
+
     Parameters
     ----------
     sl_raster : str or np.ndarray
-        Wind erosion量 raster path or array (t/km^2/a or kg/m^2).
+        Wind erosion量 raster path or array (see conventions above).
     profile : dict or None
         Rasterio profile. Required if sl_raster is ndarray and output_path is set.
     scheme : str
         Classification scheme. Currently only "china_standard" (SL190-2007).
+    cell_size : float or (xres, yres) or None
+        Grid cell edge length in metres. Provide it when passing native
+        SL (g/m) so the thresholds apply to a proper modulus.
     output_path : str or None
         If provided, write classified raster.
 
@@ -61,6 +75,10 @@ def classify_erosion(
         arr, profile = read_raster(sl_raster)
     else:
         arr = sl_raster
+
+    if cell_size is not None:
+        arr = g_per_m_to_t_per_km2(arr, cell_size)
+        logger.info("classified input converted from g/m to t/(km^2*a) with cell_size=%s", cell_size)
 
     thresholds = CHINA_STANDARD
     classified = np.zeros_like(arr, dtype=np.int32)
