@@ -7,6 +7,7 @@ import logging
 import numpy as np
 import rasterio
 from rasterio.transform import from_bounds
+from rasterio.warp import Resampling, reproject
 from pyrweq._types import RasterioProfile
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,145 @@ def ensure_same_shape(*arrays: np.ndarray) -> None:
     shapes = [a.shape for a in arrays]
     if len(set(shapes)) > 1:
         raise ValueError(f"Shape mismatch: {shapes}")
+
+
+# rasterio resampling methods exposed by align_inputs
+_RESAMPLING_METHODS = {
+    "nearest": Resampling.nearest,
+    "bilinear": Resampling.bilinear,
+    "cubic": Resampling.cubic,
+    "average": Resampling.average,
+}
+
+# inputs that are categorical and must never be interpolated
+_CATEGORICAL_KEYS = {"land_use", "landuse"}
+
+
+def _resolve_resampling(name: str, resampling: str | dict[str, str]) -> Resampling:
+    """Pick the rasterio Resampling for input `name` from user spec."""
+    if isinstance(resampling, dict):
+        spec = resampling.get(name, "bilinear")
+    elif resampling == "auto":
+        spec = "nearest" if name in _CATEGORICAL_KEYS else "bilinear"
+    else:
+        spec = resampling
+    if spec not in _RESAMPLING_METHODS:
+        raise ValueError(
+            f"unknown resampling {spec!r} for input {name!r}; "
+            f"choose from {sorted(_RESAMPLING_METHODS)}"
+        )
+    return _RESAMPLING_METHODS[spec]
+
+
+def _grids_match(a: RasterioProfile, b: RasterioProfile) -> bool:
+    """True if two profiles share CRS, transform and shape."""
+    if a.get("crs") != b.get("crs"):
+        return False
+    if (a.get("width"), a.get("height")) != (b.get("width"), b.get("height")):
+        return False
+    ta, tb = a.get("transform"), b.get("transform")
+    if ta is None or tb is None:
+        return ta is tb
+    return np.allclose(tuple(ta)[:6], tuple(tb)[:6])
+
+
+def align_inputs(
+    paths: dict[str, str],
+    reference: str | None = None,
+    resampling: str | dict[str, str] = "auto",
+) -> tuple[dict[str, np.ndarray], RasterioProfile]:
+    """Load rasters onto one common grid (CRS + transform + shape).
+
+    Real studies combine rasters from different sources — meteorology at
+    0.25 deg, soil at 1 km, NDVI at 250 m — and every RWEQ input must share
+    one grid before computation. This function warps all inputs onto the
+    grid of a reference raster using ``rasterio.warp.reproject``.
+
+    Parameters
+    ----------
+    paths : dict
+        Mapping of input name -> GeoTIFF path, using the same keys as
+        ``compute_rweq`` (wind_speed, precip, ..., land_use, ...).
+    reference : str or None
+        Path of the reference raster whose grid is the target. Default:
+        the first raster in ``paths`` (dict order).
+    resampling : "auto" or str or dict
+n        Resampling method per input. "auto" (default) uses nearest for
+        categorical inputs (land_use) and bilinear for everything else;
+        a string applies one method globally; a dict maps input names to
+        methods and falls back to bilinear for unlisted names.
+        Methods: nearest, bilinear, cubic, average.
+
+    Returns
+    -------
+    data : dict
+        Mapping of input name -> 2D float array on the reference grid,
+        NaN where nodata / outside the source footprint.
+    profile : dict
+        The reference profile (float32, nodata NaN).
+
+    Notes
+    -----
+    All outputs are float32. Integer codes (land_use) survive nearest
+    resampling exactly; categorical inputs keep their code set.
+    """
+    if not paths:
+        raise ValueError("paths must not be empty")
+    if reference is None:
+        reference = next(iter(paths.values()))
+
+    with rasterio.open(reference) as ref_src:
+        ref_profile = ref_src.profile.copy()
+        ref_crs = ref_src.crs
+        ref_transform = ref_src.transform
+        ref_height, ref_width = ref_src.height, ref_src.width
+
+    if ref_crs is None:
+        raise ValueError(
+            f"reference raster {reference!r} has no CRS; cannot align inputs"
+        )
+
+    out_profile = ref_profile.copy()
+    out_profile.update(dtype="float32", nodata=np.nan)
+
+    data: dict[str, np.ndarray] = {}
+    n_warped = 0
+    for name, path in paths.items():
+        with rasterio.open(path) as src:
+            src_profile = src.profile.copy()
+        if _grids_match(src_profile, ref_profile):
+            arr, _ = read_raster(path)
+            if arr.dtype != np.float32:
+                arr = arr.astype(np.float32)
+            data[name] = arr
+            continue
+
+        method = _resolve_resampling(name, resampling)
+        dst = np.full((ref_height, ref_width), np.nan, dtype=np.float32)
+        with rasterio.open(path) as src:
+            reproject(
+                source=rasterio.band(src, 1),
+                destination=dst,
+                src_transform=src.transform,
+                src_crs=src.crs,
+                src_nodata=src.nodata,
+                dst_transform=ref_transform,
+                dst_crs=ref_crs,
+                dst_nodata=np.nan,
+                resampling=method,
+            )
+        data[name] = dst
+        n_warped += 1
+        logger.info(
+            "aligned %s (%s) onto reference grid with %s",
+            name, path, method.name,
+        )
+
+    if n_warped:
+        logger.info("align_inputs: warped %d/%d inputs onto %s", n_warped, len(paths), reference)
+    else:
+        logger.info("align_inputs: all %d inputs already on the reference grid", len(paths))
+    return data, out_profile
 
 
 def load_inputs(paths: dict[str, str]) -> tuple[dict[str, np.ndarray], RasterioProfile]:
