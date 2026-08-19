@@ -74,6 +74,7 @@ def compute_rweq(
     calcium_carbonate: RasterInput | None = None,
     land_use: RasterInput | None = None,
     slope: RasterInput | None = None,
+    wind_freq: FactorArray | None = None,
     threshold_speed: float = 5.0,
     downwind_distance: float = 50.0,
     veg_method: str = "simplified",
@@ -91,7 +92,12 @@ def compute_rweq(
     Parameters
     ----------
     wind_speed, precip, temp, elevation, potential_et, snow_depth :
-        Input arrays or GeoTIFF paths. Wind speed is in m/s.
+        Input arrays or GeoTIFF paths. Wind speed is in m/s, either a 2D
+        field or a 3D array (k, rows, cols) of wind speed observations
+        (RWEQ wind-speed classes; see calc_weather_factor).
+    wind_freq : array or None
+        Optional per-pixel occurrence frequencies with the same shape as a
+        3D wind_speed; must sum to 1 along axis 0. Arrays only (no paths).
     sand_content, silt_content, clay_content, organic_matter :
         Soil texture arrays (%).
     ndvi : array or str
@@ -155,6 +161,7 @@ def compute_rweq(
 
     lazy = backend == "dask"
     wind = _load_with_profile(wind_speed, lazy)
+    shape = wind.shape[-2:]  # spatial shape (wind may be 3D)
     pr = _load_with_profile(precip, lazy)
     tmp = _load_with_profile(temp, lazy)
     ele = _load_with_profile(elevation, lazy)
@@ -168,24 +175,26 @@ def compute_rweq(
 
     caco3 = _load_with_profile(calcium_carbonate, lazy) if calcium_carbonate is not None else None
     lu = _load_with_profile(land_use, lazy) if land_use is not None else None
-    slp = _load_with_profile(slope, lazy) if slope is not None else np.zeros_like(wind)
+    slp = _load_with_profile(slope, lazy) if slope is not None else np.zeros(shape, dtype=np.float32)
 
     if base_profile is None:
         # All inputs were arrays; create a minimal placeholder profile
         base_profile = {
-            "driver": "GTiff", "dtype": "float32", "width": wind.shape[1],
-            "height": wind.shape[0], "count": 1, "crs": None,
+            "driver": "GTiff", "dtype": "float32", "width": shape[1],
+            "height": shape[0], "count": 1, "crs": None,
             "transform": None, "nodata": -9999.0,
         }
 
-    shape = wind.shape
+    shape_ok = (wind.ndim == 2) or (wind.ndim == 3)
+    if not shape_ok:
+        raise ValueError(f"wind_speed must be 2D or 3D, got ndim={wind.ndim}")
     logger.info(
         "compute_rweq start: shape=%s backend=%s n_workers=%s veg_method=%s threshold=%s z=%s",
         shape, backend, n_workers, veg_method, threshold_speed, downwind_distance,
     )
 
     # --- dask backend detection & setup ---
-    has_dask = any(is_dask_array(x) for x in [wind, pr, tmp, ele, pet, snow, sa, si, cl, om, ndvi_arr] if x is not None)
+    has_dask = any(is_dask_array(x) for x in [wind, wind_freq, pr, tmp, ele, pet, snow, sa, si, cl, om, ndvi_arr] if x is not None)
 
     if backend == "dask":
         try:
@@ -194,7 +203,7 @@ def compute_rweq(
             raise ImportError(
                 "backend='dask' requires dask[array]. Install with: pip install pyrweq[dask]"
             ) from e
-        if not all(is_dask_array(x) for x in [wind, pr, tmp, ele, pet, snow, sa, si, cl, om, ndvi_arr] if x is not None):
+        if not all(is_dask_array(x) for x in [wind, wind_freq, pr, tmp, ele, pet, snow, sa, si, cl, om, ndvi_arr] if x is not None):
             raise TypeError("dask backend requires all array inputs to be dask.array.Array")
     elif has_dask:
         logger.warning(
@@ -210,6 +219,7 @@ def compute_rweq(
     factor_tasks = {
         "weather": lambda: calc_weather_factor(
             wind, pr, tmp, ele, pet, snow,
+            wind_freq=wind_freq,
             threshold_speed=threshold_speed, input_10m=input_10m,
             nd=nd, n_obs=n_obs,
         ),
