@@ -13,6 +13,9 @@ from pyrweq.units import (
     t_per_km2_to_g_per_m,
     cell_size_from_profile,
 )
+from pyrweq.io import align_inputs
+from pyrweq.validate import validate, sample_points
+from pyrweq.sensitivity import oat_sensitivity
 
 __all__ = [
     "compute_rweq",
@@ -22,4 +25,8 @@ __all__ = [
     "g_per_m_to_t_per_km2",
     "t_per_km2_to_g_per_m",
     "cell_size_from_profile",
+    "align_inputs",
+    "validate",
+    "sample_points",
+    "oat_sensitivity",
 ]
