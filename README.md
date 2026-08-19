@@ -6,15 +6,24 @@ pyrweq is a scientific Python library for estimating wind erosion loss from rast
 
 ## Features
 
-- **Weather Factor (WF)** — wind energy available for erosion
+- **Weather Factor (WF)** — wind energy available for erosion; accepts a
+  single wind-speed field, a 3D observation series, or a 3D speed/frequency
+  distribution (Fryear et al. 1998 original form)
 - **Soil Erodibility Factor (EF)** — susceptibility based on soil texture
 - **Soil Crust Factor (SCF)** — surface crusting effect
 - **Roughness Factor (K')** — terrain roughness (Smith-Carson equation)
 - **Vegetation Factor (C)** — vegetation protection from NDVI
-- **Wind Erosion Amount (SL)** — final erosion estimate
+- **Wind Erosion Amount (SL)** — final erosion estimate (native g/m)
+- **Unit Chain** — explicit SL (g/m) to modulus (t/(km^2*a)) conversion
+- **Grid Alignment** — warp mixed-resolution inputs (0.25 deg meteo, 1 km
+  soil, 250 m NDVI) onto one reference grid
 - **Sand Fixation** — vegetation protective effect quantification
 - **Erosion Intensity Classification** — 6-level standard (SL190-2007)
 - **Zonal Statistics** — per-zone summary of erosion results
+- **Validation** — r2 / RMSE / MAE / bias / Nash-Sutcliffe against
+  observations, with point sampling for station data
+- **Sensitivity** — one-at-a-time parameter perturbation with arc
+  elasticities (the standard reviewer question)
 - **Parallel Factor Computation** — factors computed concurrently via threads (`n_workers`)
 - **Dask Backend** — lazy array computation for large rasters (`backend="dask"`)
 - **Structured Logging** — module-level loggers with info/warning messages
@@ -65,6 +74,71 @@ print(f"Mean erosion: {result.sl.mean():.2f}")
 
 # Classify erosion intensity
 classes = classify_erosion(result.sl)
+```
+
+## Period length and units
+
+RWEQ natively uses a half-month period. `compute_rweq` defaults to `nd=15`
+(days per period) and `n_obs=nd` (wind observations per period); monthly
+runs should pass `nd=30`. `compute_rweq_yearly` infers `nd=365.25/n_periods`
+automatically (override with `period_days` or an explicit `nd`).
+
+```python
+# monthly periods, one year of data
+yearly = compute_rweq_yearly(monthly_inputs, period_days=30.0)
+```
+
+SL comes out in RWEQ-native g/m. Convert to the reporting modulus before
+classifying (the SL190-2007 thresholds are t/(km^2*a)):
+
+```python
+from pyrweq import g_per_m_to_t_per_km2, classify_erosion
+
+modulus = g_per_m_to_t_per_km2(result.sl, cell_size=500.0)  # 500 m cells
+classes = classify_erosion(modulus)
+# or directly: classify_erosion(result.sl, cell_size=500.0)
+```
+
+## Wind speed distributions
+
+`v*(v-Ut)^2` is convex, so feeding a period-mean wind speed systematically
+underestimates WF. When daily (or sub-daily) wind speeds are available, pass
+them as a 3D stack and WF follows the RWEQ original summation over
+observations:
+
+```python
+# wind_series: (n_days, rows, cols) daily wind speeds
+result = compute_rweq(wind_speed=wind_series, ...)
+
+# or a speed-class frequency distribution (freqs sum to 1 along axis 0)
+result = compute_rweq(wind_speed=speed_bins, wind_freq=freqs, ...)
+```
+
+## Mixed-resolution inputs
+
+Meteorology, soil and NDVI rasters rarely share a grid. Warp everything onto
+one reference grid first:
+
+```python
+from pyrweq import align_inputs
+
+data, profile = align_inputs(paths, reference="ndvi.tif")  # auto: nearest
+# for land_use, bilinear for continuous inputs                # for the rest
+result = compute_rweq(**data)
+```
+
+## Validation and sensitivity
+
+```python
+from pyrweq import validate, sample_points, oat_sensitivity
+
+pred = sample_points("output/sl_modulus.tif", xs, ys)  # at stations
+metrics = validate(observed, pred)          # r2, rmse, mae, bias, NSE
+
+sens = oat_sensitivity(
+    lambda **kw: compute_rweq(**data, n_workers=1, **kw).sl,
+    params={"threshold_speed": 5.0, "downwind_distance": 50.0},
+)   # arc elasticity per parameter
 ```
 
 ## Performance options

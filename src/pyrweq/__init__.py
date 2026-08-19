@@ -3,7 +3,7 @@
 import logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from pyrweq.core import compute_rweq, compute_rweq_yearly
 from pyrweq.sandfix import compute_sandfix
